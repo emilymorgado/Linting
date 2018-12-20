@@ -1,0 +1,43 @@
+#!/bin/sh
+
+# Colors for text
+GRN="\033[0;32m" # green
+NC="\033[0m" # no color
+PUR="\033[0;35m" # purple
+RED="\033[0;31m" # red
+
+# Run Tests
+staged=$(git diff --cached)
+
+# cd <into project>
+
+export CI=true
+
+test_output=$((npm test -- --bail --colors) 2>&1 | tee /dev/tty)
+
+if grep -m 1 "FAIL" <<< "$test_output"
+then
+	echo ${RED}"Please fix tests before committing"${NC}
+	exit 1
+fi
+
+# Track JS files
+cd ..
+jsfiles=$(git diff --cached --name-only --diff-filter=ACM "*.js" | tr '\n' ' ')
+[ -z "$jsfiles" ] && exit 0
+
+# Run ESLint
+eslint ${jsfiles} --fix --color
+eslint_exit=$?
+
+if [ ${eslint_exit} -eq 0 ]; then
+  echo "${GRN}✓ ESLint passed${NC}"
+	# Prettify all staged .js files
+	echo "$jsfiles" | xargs prettier --config .prettierrc.json --write
+	# Add back the modified/prettified files to staging
+	echo "$jsfiles" | xargs git add
+	echo "${PUR}Your committed files have been prettified - the formatting may have changed${NC}"
+else
+  echo "${RED}✘ ESLint failed!${NC}" 1>&2
+  exit ${eslint_exit}
+fi
